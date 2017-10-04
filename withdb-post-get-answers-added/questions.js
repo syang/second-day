@@ -3,7 +3,9 @@
 const AWS = require('aws-sdk');
 const dynamo = new AWS.DynamoDB.DocumentClient();
 
-const tableName = process.env.DYNAMODB_QUESTIONS_TABLE;
+const questionTableName = process.env.DYNAMODB_QUESTIONS_TABLE;
+const answerTableName = process.env.DYNAMODB_ANSWERS_TABLE;
+
 
 const createResponse = (statusCode, body) => {
   // console.log("inside createResponse, body = ", body);
@@ -49,7 +51,7 @@ module.exports.postQuestion = (event, context, callback) => {
   console.log("item:", item);
 
   let params = {
-    TableName: tableName,
+    TableName: questionTableName,
     Item: item
   };
 
@@ -73,7 +75,7 @@ module.exports.postQuestion = (event, context, callback) => {
 module.exports.queryQuestionList = (event, context, callback) => {
   console.log("query parameters: ", event.queryStringParameters);
   var params = {
-      TableName : tableName,
+      TableName : questionTableName,
       // Limit: event.queryStringParameters.limit,
       ScanIndexForward: false,
       KeyConditionExpression: "#category = :category",
@@ -103,6 +105,90 @@ module.exports.queryQuestionList = (event, context, callback) => {
     callback(null, createResponseWithHeader(200, JSON.stringify(data.Items)));
   }).catch((err) => {
     console.log(`GET ITEM FAILED FOR doc, WITH ERROR: ${err}`);
+    callback(null, createResponseWithHeader(500, err));
+  });
+};
+
+exports.postAnswer = (event, context, callback) => {
+  console.log("Whole request: " + JSON.stringify(event));
+  console.log("postAnswer --> event.body content: ", event.body);
+  console.log("event.pathParameters.questionId", event.pathParameters.questionId);
+  let item = {
+    qid: event.pathParameters.questionId,
+    // Date.now() returns the milliseconds elapsed since 1 January 1970 00:00:00 UTC
+    ts: Date.now().toString(),
+    answer: JSON.parse(event.body).answer
+  };
+  let params = {
+    TableName: answerTableName,
+    Item: item
+  };
+
+  let dbPut = (params) => {
+    return dynamo.put(params).promise()
+  };
+
+  dbPut(params).then((data) => {
+    console.log(`PUT ITEM SUCCEEDED WITH quetion = ${item.answer}`);
+    callback(null, createResponseWithHeader(200, JSON.stringify(item)));
+  }).catch((err) => {
+    console.log(`PUT ITEM FAILED FOR doc = ${item.answer}, WITH ERROR: ${err}`);
+    callback(null, createResponseWithHeader(500, err));
+  });
+};
+
+exports.getQuestionDetails = (event, context, callback) => {
+  var keys = event.pathParameters.questionId.split("-");
+  console.log("keys: ", keys);
+  var result = {};
+
+  // Let first query the question table and retrive the question
+  let params = {
+    TableName: questionTableName,
+    Key: {
+      category: keys[0],
+      ts: keys[1]
+    }
+  };
+  // Let then query the answer table and retrive the list of answers (or empty)
+  let params_query = {
+      TableName : answerTableName,
+      KeyConditionExpression: "#yr = :yyyy",
+      ExpressionAttributeNames:{
+          "#yr": "qid"
+      },
+      ExpressionAttributeValues: {
+          ":yyyy":event.pathParameters.questionId
+      }
+  };
+
+  // Define the two promises and later chain them together
+  let dbGet = (params) => {
+    return dynamo.get(params).promise()
+  };
+  let dbQuery = (params) => {
+    // return dynamo.get(params).promise()
+    return dynamo.query(params).promise()
+  };
+
+  dbGet(params).then((data) => {
+    if (!data.Item) {
+      callback(null, createResponseWithHeader(404, "ITEM NOT FOUND"));
+    }
+    result.question = JSON.parse(JSON.stringify(data.Item.question));
+    console.log("result.question: ", result.question);
+    return dbQuery(params_query);
+  }).then((data) => {
+    if (!data.Items) {
+      // there exist no answers, but there exist question because of dbGet
+      // comes here already
+      callback(null, createResponseWithHeader(200, JSON.stringify(result)));
+    }
+    result.answers = JSON.parse(JSON.stringify(data.Items));
+    console.log("result.answers: ", result.answers);
+    callback(null, createResponseWithHeader(200, JSON.stringify(result)));
+  }).catch((err) => {
+    console.log(`getQuestionDetails $event.pathParameters.questionId, WITH ERROR: ${err}`);
     callback(null, createResponseWithHeader(500, err));
   });
 };
