@@ -41,7 +41,6 @@ module.exports.postQuestion = (event, context, callback) => {
   let item = {
     category: parsed_category,
     ts: timestamp,
-    // question: JSON.parse(event.body
     question: parsed_question
   };
   parsed_details && (item.details = parsed_details)
@@ -74,10 +73,13 @@ module.exports.postQuestion = (event, context, callback) => {
 
 module.exports.queryQuestionList = (event, context, callback) => {
   console.log("query parameters: ", event.queryStringParameters);
+  var parsed_lastevaluated = 
+      event.queryStringParameters.last_question_id;
+  
   var params = {
       TableName : questionTableName,
-      // Limit: event.queryStringParameters.limit,
-      ScanIndexForward: false,
+      Limit: event.queryStringParameters.limit, // retrun how many client asks for
+      ScanIndexForward: false, // latest entry first
       KeyConditionExpression: "#category = :category",
       ExpressionAttributeNames:{
           "#category": "category"
@@ -85,15 +87,21 @@ module.exports.queryQuestionList = (event, context, callback) => {
       ExpressionAttributeValues: {
           ":category": event.queryStringParameters.category
       }
-
   };
+  parsed_lastevaluated && (params.ExclusiveStartKey = 
+    {
+      "category": parsed_lastevaluated.split("-")[0],
+      "ts": parsed_lastevaluated.split("-")[1]
+    }
+  );
+  
   let dbQuery = (params) => {
     // return dynamo.get(params).promise()
     return dynamo.query(params).promise()
   };
 
   dbQuery(params).then((data) => {
-    // console.log(data);
+    console.log(data);
     if (!data.Items) {
       callback(null, createResponseWithHeader(404, "ITEM NOT FOUND"));
     }
@@ -102,7 +110,15 @@ module.exports.queryQuestionList = (event, context, callback) => {
         delete item.category;
         delete item.ts;
     });
-    callback(null, createResponseWithHeader(200, JSON.stringify(data.Items)));
+    delete data.ScannedCount;
+
+    // TODO: ask Song to change his client side code
+    callback(null, createResponseWithHeader(200, JSON.stringify(
+      {"questions":data.Items, 
+       "count":data.Count, 
+       "last_question_id":data.LastEvaluatedKey.category + "-" + data.LastEvaluatedKey.ts}
+      )));
+    // callback(null, createResponseWithHeader(200, JSON.stringify(data.Items)));  
   }).catch((err) => {
     console.log(`GET ITEM FAILED FOR doc, WITH ERROR: ${err}`);
     callback(null, createResponseWithHeader(500, err));
