@@ -101,23 +101,26 @@ module.exports.queryQuestionList = (event, context, callback) => {
   };
 
   dbQuery(params).then((data) => {
-    console.log(data);
+    // console.log(data);
+    // console.log(data.Items);
     if (!data.Items) {
       callback(null, createResponseWithHeader(404, "ITEM NOT FOUND"));
     }
     data.Items.forEach(function(item) {
-        item.id = item.category + "-" + item.ts;
-        delete item.category;
-        delete item.ts;
+          item.id = item.category + "-" + item.ts;
+          delete item.category;
+          delete item.ts;
     });
     delete data.ScannedCount;
 
     // TODO: ask Song to change his client side code
-    callback(null, createResponseWithHeader(200, JSON.stringify(
-      {"questions":data.Items, 
-       "count":data.Count, 
-       "last_question_id":data.LastEvaluatedKey.category + "-" + data.LastEvaluatedKey.ts}
-      )));
+    let return_body =  {
+      "questions":data.Items, 
+      "count":data.Count
+    }
+    data.LastEvaluatedKey && (return_body.last_question_id = 
+       data.LastEvaluatedKey.category + "-" + data.LastEvaluatedKey.ts);
+    callback(null, createResponseWithHeader(200, JSON.stringify(return_body)));
     // callback(null, createResponseWithHeader(200, JSON.stringify(data.Items)));  
   }).catch((err) => {
     console.log(`GET ITEM FAILED FOR doc, WITH ERROR: ${err}`);
