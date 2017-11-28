@@ -1,12 +1,7 @@
 Template created serverless project
 ---------------------------
 
-#### We added a function definition, which generated one API-Gateway endpoint and the lambda function
+#### Added the answer related API (POST and GET)
 
-- Go to AWS console and read the API-Gateway page
-- Go to AWS console and read the lambda function page
+#### Added the limit (paging) functionality for query the functions
 
-#### Invoke the newly added function
-
-- `serverless invoke -f PostQuestionFunction`
-- invoke from the API-Gateway page
