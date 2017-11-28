@@ -1,4 +1,4 @@
-Template created serverless project
+2nd Step: add a function definition
 ---------------------------
 
 #### We added a function definition, which generated one API-Gateway endpoint and the lambda function
