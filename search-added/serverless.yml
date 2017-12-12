@@ -1,0 +1,170 @@
+# Welcome to serverless. Read the docs
+# https://serverless.com/framework/docs/
+
+# Serverless.yml is the configuration the CLI
+# uses to deploy your code to your provider of choice
+
+# The `service` block is the name of the service
+service: backend
+
+# The `provider` block defines where your service will be deployed
+provider:
+  name: aws
+  runtime: nodejs6.10
+  region: us-west-1
+  environment:
+    DYNAMODB_QUESTIONS_TABLE: ${self:service}-${opt:stage, self:provider.stage}-questions_table
+    DYNAMODB_ANSWERS_TABLE: ${self:service}-${opt:stage, self:provider.stage}-answers_table
+    ES_DOMAIN: ${self:service}-${opt:stage, self:provider.stage}-searchdomain
+
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - dynamodb:Query   # for put and get queries
+        - dynamodb:PutItem
+        - dynamodb:GetItem      
+      Resource:
+        - "arn:aws:dynamodb:${opt:region, self:provider.region}:*:table/${self:provider.environment.DYNAMODB_QUESTIONS_TABLE}"
+        - "arn:aws:dynamodb:${opt:region, self:provider.region}:*:table/${self:provider.environment.DYNAMODB_ANSWERS_TABLE}"
+    - Effect: Allow
+      Action:
+        - dynamodb:DescribeStream # for stream triggers
+        - dynamodb:GetRecords
+        - dynamodb:GetShardIterator
+        - dynamodb:ListStreams      
+      Resource:
+        - Fn::GetAtt:
+          - ServerlessDynamoDbQuestionsTable
+          - StreamArn   
+        - Fn::GetAtt:
+          - ServerlessDynamoDbAnswersTable
+          - StreamArn
+
+
+# The `functions` block defines what code to deploy
+functions:
+  PostQuestionFunction:
+    handler: questions.postQuestion
+    events:
+      - http:
+          path: questions
+          method: post
+          cors: true
+  GetQuestionListFunction:
+    handler: questions.queryQuestionList
+    events:
+      - http:
+          path: questions
+          method: get
+          cors: true
+
+  GetQuestionDetailsFunction:
+    handler: questions.getQuestionDetails
+    events:
+      - http:
+          path: questions/{questionId}
+          method: get
+          cors: true
+
+  PostAnswerFunction:
+    handler: questions.postAnswer
+    events:
+      - http:
+          path: questions/{questionId}/answers
+          method: post
+          cors: true
+  
+  IndexContentFunction:
+    handler: es_trigger.handler
+    events:
+      - stream:
+          type: dynamodb
+          batchSize: 1
+          startingPosition: TRIM_HORIZON
+          arn:
+            Fn::GetAtt:
+              - ServerlessDynamoDbQuestionsTable
+              - StreamArn
+      - stream:
+          type: dynamodb
+          batchSize: 1
+          startingPosition: TRIM_HORIZON
+          arn:
+            Fn::GetAtt:
+              - ServerlessDynamoDbAnswersTable
+              - StreamArn                   
+
+resources:  # CloudFormation template syntax
+  Resources:
+    ServerlessDynamoDbQuestionsTable:
+      Type: 'AWS::DynamoDB::Table'
+      # DeletionPolicy: Retain
+      Properties:
+        AttributeDefinitions:
+          - AttributeName: category
+            AttributeType: S
+          - AttributeName: ts
+            AttributeType: S
+        KeySchema:
+          - AttributeName: category
+            KeyType: HASH
+          - AttributeName: ts
+            KeyType: RANGE
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        TableName: ${self:provider.environment.DYNAMODB_QUESTIONS_TABLE}
+        StreamSpecification:
+          StreamViewType: NEW_IMAGE
+    ServerlessDynamoDbAnswersTable:
+      Type: 'AWS::DynamoDB::Table'
+      # DeletionPolicy: Retain
+      Properties:
+        AttributeDefinitions:
+          - AttributeName: qid
+            AttributeType: S
+          - AttributeName: ts
+            AttributeType: S
+        KeySchema:
+          - AttributeName: qid
+            KeyType: HASH
+          - AttributeName: ts
+            KeyType: RANGE
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        TableName: ${self:provider.environment.DYNAMODB_ANSWERS_TABLE}
+        StreamSpecification:
+          StreamViewType: NEW_IMAGE
+    ServerlessElasticsearchDomain:
+      Type: "AWS::Elasticsearch::Domain"
+      Properties: 
+        DomainName: ${self:provider.environment.ES_DOMAIN}
+        ElasticsearchClusterConfig:
+          InstanceCount: 1
+          InstanceType: t2.micro.elasticsearch
+        EBSOptions: 
+          EBSEnabled: true
+          Iops: 0
+          VolumeSize: 10
+          VolumeType: "gp2"
+        AccessPolicies: 
+            Version: "2012-10-17"
+            Statement: 
+              -
+                Effect: "Allow"
+                Principal: 
+                  AWS: "*"
+                Action: "es:*"
+                Resource: "arn:aws:es:${self:provider.region}:*:domain/backend-dev-searchdomain/*"
+              -
+                Effect: "deny"
+                Principal: 
+                  AWS: "*"
+                Action: 
+                  - "es:DeleteElasticsearchDomain"
+                  - "es:CreateElasticsearchDomain"
+                Resource: "arn:aws:es:${self:provider.region}:*:domain/backend-dev-searchdomain/*"
+        Tags:
+              - Key: stack
+                Value: serverless
