@@ -57,6 +57,14 @@ functions:
           path: questions
           method: get
           cors: true
+      - http:
+          path: search
+          method: get
+          integration: http-proxy
+          cors: true
+          request:
+            uri: https://search-backend-dev-searchdomain-jku36sqvljiz67awyicmg42ry4.us-west-1.es.amazonaws.com/q_a/_search
+            # method: post # optional, defaults to http.method          
 
   GetQuestionDetailsFunction:
     handler: questions.getQuestionDetails
